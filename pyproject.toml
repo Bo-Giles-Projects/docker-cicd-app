@@ -1,0 +1,13 @@
+# Tool settings live here so that your laptop and the CI pipeline behave identically.
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+# E/W = pycodestyle, F = pyflakes (unused imports/variables), I = import sorting,
+# B = likely bugs (flake8-bugbear), UP = modernize old Python syntax.
+select = ["E", "W", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

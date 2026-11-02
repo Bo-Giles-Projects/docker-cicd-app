@@ -1,0 +1,19 @@
+# Files Docker should NOT send to the build. Smaller context = faster builds,
+# and secrets / junk never end up in an image layer.
+.git
+.github
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+tests
+requirements-dev.txt
+*.md
+Dockerfile
+docker-compose.yml
+.dockerignore
+.env
+*.zip

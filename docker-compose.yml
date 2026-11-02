@@ -1,0 +1,15 @@
+# Run the app locally with:  docker compose up --build
+# Stop it with:              docker compose down
+services:
+  web:
+    build:
+      context: .
+      args:
+        APP_VERSION: "local-dev"   # baked into the image at build time
+    image: docker-cicd-app:local
+    ports:
+      - "8000:8000"                # host port : container port
+    environment:
+      # Runtime override. This value wins over the one baked in by the build arg.
+      APP_VERSION: "local-dev"
+    restart: unless-stopped

@@ -1,0 +1,150 @@
+# CI/CD pipeline: lint -> test -> build image -> smoke test -> publish to GHCR.
+name: CI
+
+# WHEN to run: on every push to main and on every pull request targeting main.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least privilege: by default the automatic GITHUB_TOKEN can only READ the repo.
+# Individual jobs ask for more only if they need it.
+permissions:
+  contents: read
+
+# If you push twice quickly, cancel the older run for the same branch/PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Image name on GitHub Container Registry. github.repository looks like
+  # "your-username/docker-cicd-app". docker/metadata-action lowercases it for us,
+  # because registry names must be lowercase.
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Job 1: code quality. Lint with ruff, then run the unit tests.
+  # --------------------------------------------------------------------------
+  test:
+    name: Lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip                                # reuse downloaded packages between runs
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint with ruff
+        run: ruff check .
+
+      - name: Check formatting with ruff
+        run: ruff format --check .
+
+      - name: Run unit tests
+        run: pytest -v
+
+  # --------------------------------------------------------------------------
+  # Job 2: build the Docker image, smoke test it, and (on main only) publish it.
+  # "needs: test" means this job only starts if job 1 passed.
+  # --------------------------------------------------------------------------
+  docker:
+    name: Build, smoke test, and publish image
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write          # required to push images to ghcr.io with GITHUB_TOKEN
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      # Buildx is Docker's modern build engine. It enables layer caching in CI.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Work out the image tags and labels from the git context.
+      - name: Generate image tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # Build the image and load it into the runner's local Docker so we can run it.
+      # Nothing is pushed in this step.
+      - name: Build image (local, for testing)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: smoke-test:ci
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Smoke test: start the real container and check that /health answers.
+      - name: Smoke test the container
+        run: |
+          docker run -d --name smoke -p 8000:8000 smoke-test:ci
+          for i in $(seq 1 30); do
+            if curl --silent --fail http://localhost:8000/health; then
+              echo
+              echo "Health check passed on attempt $i"
+              curl --silent --fail http://localhost:8000/api/info
+              echo
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Container never became healthy. Logs:"
+          docker logs smoke
+          exit 1
+
+      # OPTIONAL: scan the image for known vulnerabilities with Trivy.
+      # Uncomment to enable. It is non-blocking (exit-code 0): findings are shown in
+      # the log but do not fail the build. Change exit-code to "1" to make it blocking.
+      # - name: Scan image with Trivy (non-blocking)
+      #   uses: aquasecurity/trivy-action@v0.36.0
+      #   with:
+      #     image-ref: smoke-test:ci
+      #     severity: CRITICAL,HIGH
+      #     ignore-unfixed: true
+      #     exit-code: "0"
+
+      # Everything below runs ONLY on a push to main (not on pull requests).
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build again (almost instant thanks to the cache) and push with the tags
+      # generated above: sha-<full commit SHA> and latest.
+      - name: Push image to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+          cache-from: type=gha

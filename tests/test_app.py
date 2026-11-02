@@ -36,6 +36,7 @@ def test_info_uses_version_from_env(client, monkeypatch):
     response = client.get("/api/info")
     assert response.status_code == 200
     data = response.get_json()
+    assert data["service"] == "docker-cicd-app"
     assert data["version"] == "1.2.3"
     assert data["hostname"] == socket.gethostname()
 

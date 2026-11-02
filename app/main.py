@@ -45,6 +45,7 @@ def create_app() -> Flask:
         # report different versions without editing the source. The fallback is used
         # when the variable isn't set (for example, when running locally).
         return jsonify(
+            service="docker-cicd-app",
             version=os.environ.get("APP_VERSION", "0.0.0-dev"),
             # Inside a container, the hostname is the container ID, which is handy for
             # seeing WHICH container answered when you run several copies.

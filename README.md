@@ -2,11 +2,11 @@
 
 A tiny Python web app, packaged in a **production-style Docker image**, with a **GitHub Actions pipeline** that automatically lints, tests, builds, smoke-tests, and publishes the image to **GitHub Container Registry (GHCR)** every time code is pushed.
 
-> Built by **Gary Giles**, B.S. Information Technology, Georgia Southern University (2026), as the second project in my cloud & DevOps portfolio.
+> Built by **Gary "Bo" Giles**, B.S. Information Technology, Georgia Southern University (2026), as the second project in my Cloud & DevOps portfolio.
 
-[![CI](https://github.com/[[YOUR-GITHUB-USERNAME]]/docker-cicd-app/actions/workflows/ci.yml/badge.svg)](https://github.com/[[YOUR-GITHUB-USERNAME]]/docker-cicd-app/actions/workflows/ci.yml)
+[![CI](https://github.com/Bo-Giles-Projects/docker-cicd-app/actions/workflows/ci.yml/badge.svg)](https://github.com/Bo-Giles-Projects/docker-cicd-app/actions/workflows/ci.yml)
 
-**Container image:** `ghcr.io/[[your-github-username-in-lowercase]]/docker-cicd-app`
+**Container image:** `ghcr.io/bo-giles-projects/docker-cicd-app`
 
 ---
 
@@ -20,11 +20,11 @@ A tiny Python web app, packaged in a **production-style Docker image**, with a *
 
 ## The app
 
-| Endpoint | Returns |
-|---|---|
-| `GET /` | A simple HTML homepage |
-| `GET /health` | `{"status": "ok"}` |
-| `GET /api/info` | `{"version": "<APP_VERSION env var>", "hostname": "<container hostname>"}` |
+| Endpoint        | Returns                                                                                                  |
+| --------------- | -------------------------------------------------------------------------------------------------------- |
+| `GET /`         | A simple HTML homepage                                                                                   |
+| `GET /health`   | `{"status": "ok"}`                                                                                       |
+| `GET /api/info` | `{"service": "docker-cicd-app", "version": "<APP_VERSION env var>", "hostname": "<container hostname>"}` |
 
 ## Architecture
 
@@ -124,14 +124,14 @@ pytest -v                                   # unit tests
 
 The pipeline lives in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every push to `main` and every pull request into `main`.
 
-| Step | What happens | When |
-|---|---|---|
-| **1. Lint** | `ruff check` and `ruff format --check` catch style problems and likely bugs | always |
-| **2. Test** | `pytest` runs the unit tests | always |
-| **3. Build** | Docker builds the image (with layer caching) | always, only if steps 1–2 passed |
-| **4. Smoke test** | Starts the container and polls `/health` until it answers (fails after 30 seconds) | always |
-| **5. Log in** | Logs in to `ghcr.io` using the automatic `GITHUB_TOKEN` | push to `main` only |
-| **6. Publish** | Pushes the image tagged `sha-<full commit SHA>` and `latest` | push to `main` only |
+| Step              | What happens                                                                       | When                             |
+| ----------------- | ---------------------------------------------------------------------------------- | -------------------------------- |
+| **1. Lint**       | `ruff check` and `ruff format --check` catch style problems and likely bugs        | always                           |
+| **2. Test**       | `pytest` runs the unit tests                                                       | always                           |
+| **3. Build**      | Docker builds the image (with layer caching)                                       | always, only if steps 1–2 passed |
+| **4. Smoke test** | Starts the container and polls `/health` until it answers (fails after 30 seconds) | always                           |
+| **5. Log in**     | Logs in to `ghcr.io` using the automatic `GITHUB_TOKEN`                            | push to `main` only              |
+| **6. Publish**    | Pushes the image tagged `sha-<full commit SHA>` and `latest`                       | push to `main` only              |
 
 Pull requests run steps 1–4 only, so a broken change is caught **before** it can be merged, and nothing is published from an unreviewed branch.
 
@@ -179,16 +179,22 @@ The badge at the top of this README shows whether the latest run on `main` passe
 
 ## What I learned
 
-*Fill this in after you get the pipeline green. Interviewers love this section because it shows reflection, not just copying. Prompts to get you started:*
+_Fill this in after you get the pipeline green. Interviewers love this section because it shows reflection, not just copying. Prompts to get you started:_
 
 - What is the difference between a Docker **image** and a **container**, in my own words?
-- Why does the Dockerfile copy `requirements.txt` and install packages *before* copying the app code?
+- Why does the Dockerfile copy `requirements.txt` and install packages _before_ copying the app code?
 - What did my first failed pipeline run look like, and how did I debug it from the logs?
 - Why do we use a **multi-stage** build and a **non-root** user?
 - Why is the smoke test needed if the unit tests already pass?
 - What would I add next? (Examples: deploy the image to a server or Kubernetes, add vulnerability scanning, add a staging environment.)
 
 `[[Write 3–5 sentences here about what surprised you or what you'd do differently.]]`
+
+## Project evidence
+
+- [Successful CI/CD pipeline](docs/screenshots/pipeline-passed.png)
+- [Merged feature pull request](docs/screenshots/pull-request-merged.png)
+- [Running published image](docs/screenshots/published-app-info.png)
 
 ## Next project
 

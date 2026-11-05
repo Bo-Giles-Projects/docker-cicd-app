@@ -192,9 +192,9 @@ _Fill this in after you get the pipeline green. Interviewers love this section b
 
 ## Project evidence
 
-- [Successful CI/CD pipeline](docs/screenshots/pipeline-passed.png)
-- [Merged feature pull request](docs/screenshots/pull-request-merged.png)
-- [Running published image](docs/screenshots/published-app-info.png)
+- ![Successful CI/CD pipeline](docs/screenshots/pipeline-passed.png)
+- ![Merged feature pull request](docs/screenshots/pull-request-merged.png)
+- ![Running published image](docs/screenshots/published-app-info.png)
 
 ## Next project
 

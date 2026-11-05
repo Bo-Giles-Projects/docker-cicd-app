@@ -1,8 +1,8 @@
 # Dockerized Flask App with a GitHub Actions CI/CD Pipeline
 
-A tiny Python web app, packaged in a **production-style Docker image**, with a **GitHub Actions pipeline** that automatically lints, tests, builds, smoke-tests, and publishes the image to **GitHub Container Registry (GHCR)** every time code is pushed.
+A tiny Python web app, packaged in a **production-style Docker image**, with a **GitHub Actions pipeline** that automatically lints, tests, builds, smoke-tests, and publishes the image to **GitHub Container Registry (GHCR)** on pushes to `main` and pull requests targeting `main`. Checks run for both events; publishing to GHCR runs only on pushes to `main`.
 
-> Built by **Gary "Bo" Giles**, B.S. Information Technology, Georgia Southern University (2026), as the second project in my Cloud & DevOps portfolio.
+> Built by **Gary "Bo" Giles**, Information Technology student at Georgia Southern University, as the second project in my Cloud & DevOps portfolio.
 
 [![CI](https://github.com/Bo-Giles-Projects/docker-cicd-app/actions/workflows/ci.yml/badge.svg)](https://github.com/Bo-Giles-Projects/docker-cicd-app/actions/workflows/ci.yml)
 
@@ -13,7 +13,7 @@ A tiny Python web app, packaged in a **production-style Docker image**, with a *
 ## What this project shows
 
 - **Containerization:** a multi-stage `Dockerfile` with a slim base image, a non-root user, a `HEALTHCHECK`, and a production server (gunicorn).
-- **Continuous Integration (CI):** every push and pull request is automatically linted (ruff) and unit tested (pytest).
+- **Continuous Integration (CI):** every push to `main` and pull request targeting `main` is automatically linted (ruff) and unit tested (pytest).
 - **Continuous Delivery (CD):** on a push to `main`, the image is published to GHCR, tagged with the commit SHA and `latest`.
 - **Smoke testing:** the pipeline starts the real container and checks that `/health` answers before anything is published.
 - **Security habits:** least-privilege workflow permissions, no stored passwords (uses the built-in `GITHUB_TOKEN`), non-root container, and an optional Trivy vulnerability scan.
@@ -151,7 +151,7 @@ git init
 git add .
 git commit -m "Dockerized Flask app with GitHub Actions CI/CD"
 git branch -M main
-git remote add origin https://github.com/[[YOUR-GITHUB-USERNAME]]/docker-cicd-app.git
+git remote add origin https://github.com/Bo-Giles-Projects/docker-cicd-app.git
 git push -u origin main
 ```
 
@@ -165,15 +165,15 @@ Run `git status` before committing and make sure no `.venv/`, `.env`, or key fil
 4. Pull and run your published image:
 
    ```bash
-   docker pull ghcr.io/[[your-github-username-in-lowercase]]/docker-cicd-app:latest
-   docker run --rm -p 8000:8000 ghcr.io/[[your-github-username-in-lowercase]]/docker-cicd-app:latest
+   docker pull ghcr.io/bo-giles-projects/docker-cicd-app:latest
+   docker run --rm -p 8000:8000 ghcr.io/bo-giles-projects/docker-cicd-app:latest
    ```
 
    If the package is **private**, run `docker login ghcr.io` first (username = your GitHub username, password = a personal access token with the `read:packages` scope). If you want anyone to pull it, open the package's **Package settings** and change the visibility to public. Check the current visibility there rather than assuming.
 
 ## Status badge
 
-The badge at the top of this README shows whether the latest run on `main` passed. Replace `[[YOUR-GITHUB-USERNAME]]` in the badge URL with your GitHub username. It starts working after your first workflow run.
+The badge at the top of this README shows whether the latest CI run on `main` passed.
 
 ---
 
@@ -193,7 +193,8 @@ _Fill this in after you get the pipeline green. Interviewers love this section b
 ## Project evidence
 
 - ![Successful CI/CD pipeline](docs/screenshots/pipeline-passed.png)
-- ![Merged feature pull request](docs/screenshots/pull-request-merged.png)
+- ![Successful pull request checks](docs/screenshots/pull-request-merged.png)
+- [Merged feature pull request #1](https://github.com/Bo-Giles-Projects/docker-cicd-app/pull/1)
 - ![Running published image](docs/screenshots/published-app-info.png)
 
 ## Next project

@@ -16,7 +16,7 @@ A small Flask app packaged in a Docker image. GitHub Actions lints and tests cha
 - **Continuous Integration (CI):** every push to `main` and pull request targeting `main` is automatically linted (ruff) and unit tested (pytest).
 - **Continuous Delivery (CD):** on a push to `main`, the image is published to GHCR, tagged with the commit SHA and `latest`.
 - **Smoke testing:** the pipeline checks `/health` JSON and `/api/info` service, commit version, and hostname, with a 30-second readiness budget and bounded requests.
-- **Security habits:** scoped workflow permissions, the built-in `GITHUB_TOKEN`, a non-root container, and an informational Trivy vulnerability scan.
+- **Security habits:** scoped workflow permissions, the built-in `GITHUB_TOKEN`, a non-root container, removal of package installers from the runtime image, and an informational Trivy vulnerability scan.
 
 ## The app
 

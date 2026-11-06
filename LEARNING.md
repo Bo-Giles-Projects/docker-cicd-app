@@ -123,7 +123,8 @@ Creates a virtual environment and puts it first on `PATH`, so `pip` and `python`
 
 ```dockerfile
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+ && python -m pip uninstall --yes pip
 ```
 Copy **only** the requirements file, then install. Because Docker caches layers, this slow step is skipped whenever `requirements.txt` hasn't changed, even if your code did. This is the single most common Dockerfile optimization. `--no-cache-dir` stops pip from storing downloaded files.
 
@@ -176,6 +177,10 @@ CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--access-logfile",
 - `0.0.0.0` means listen on all network interfaces. If you used `127.0.0.1`, nothing outside the container could reach it.
 - `--workers 2` runs two worker processes. `--access-logfile -` sends request logs to stdout so `docker logs` shows them.
 - The **list ("exec") form** runs gunicorn directly as the main process, so it receives stop signals correctly.
+
+### Runtime packaging tools
+
+The builder removes pip from the finished virtual environment after installing the app dependencies. The runtime stage also removes the base image's pip and bundled ensurepip installer wheels. These are installation tools, not application dependencies. Install dependencies while building an image; rebuild and redeploy to change them. The container still includes Python, Flask, Gunicorn, and the libraries needed to run the app.
 
 ## `.dockerignore`
 

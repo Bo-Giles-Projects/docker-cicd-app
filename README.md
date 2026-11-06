@@ -1,49 +1,50 @@
 # Dockerized Flask App with a GitHub Actions CI/CD Pipeline
 
-A tiny Python web app, packaged in a **production-style Docker image**, with a **GitHub Actions pipeline** that automatically lints, tests, builds, smoke-tests, and publishes the image to **GitHub Container Registry (GHCR)** every time code is pushed.
+A small Flask app packaged in a Docker image. GitHub Actions lints and tests changes, builds the image once, verifies its health and release metadata, and runs an informational vulnerability scan. On pushes to `main`, the workflow publishes that same tested image to **GitHub Container Registry (GHCR)**.
 
-> Built by **Gary Giles**, B.S. Information Technology, Georgia Southern University (2026), as the second project in my cloud & DevOps portfolio.
+> Built by **Gary "Bo" Giles**, Information Technology student at Georgia Southern University, as the second project in my Cloud & DevOps portfolio.
 
-[![CI](https://github.com/[[YOUR-GITHUB-USERNAME]]/docker-cicd-app/actions/workflows/ci.yml/badge.svg)](https://github.com/[[YOUR-GITHUB-USERNAME]]/docker-cicd-app/actions/workflows/ci.yml)
+[![CI](https://github.com/Bo-Giles-Projects/docker-cicd-app/actions/workflows/ci.yml/badge.svg)](https://github.com/Bo-Giles-Projects/docker-cicd-app/actions/workflows/ci.yml)
 
-**Container image:** `ghcr.io/[[your-github-username-in-lowercase]]/docker-cicd-app`
+**Container image:** `ghcr.io/bo-giles-projects/docker-cicd-app`
 
 ---
 
 ## What this project shows
 
 - **Containerization:** a multi-stage `Dockerfile` with a slim base image, a non-root user, a `HEALTHCHECK`, and a production server (gunicorn).
-- **Continuous Integration (CI):** every push and pull request is automatically linted (ruff) and unit tested (pytest).
+- **Continuous Integration (CI):** every push to `main` and pull request targeting `main` is automatically linted (ruff) and unit tested (pytest).
 - **Continuous Delivery (CD):** on a push to `main`, the image is published to GHCR, tagged with the commit SHA and `latest`.
-- **Smoke testing:** the pipeline starts the real container and checks that `/health` answers before anything is published.
-- **Security habits:** least-privilege workflow permissions, no stored passwords (uses the built-in `GITHUB_TOKEN`), non-root container, and an optional Trivy vulnerability scan.
+- **Smoke testing:** the pipeline checks `/health` JSON and `/api/info` service, commit version, and hostname, with a 30-second readiness budget and bounded requests.
+- **Security habits:** scoped workflow permissions, the built-in `GITHUB_TOKEN`, a non-root container, removal of package installers from the runtime image, and an informational Trivy vulnerability scan.
 
 ## The app
 
-| Endpoint | Returns |
-|---|---|
-| `GET /` | A simple HTML homepage |
-| `GET /health` | `{"status": "ok"}` |
-| `GET /api/info` | `{"version": "<APP_VERSION env var>", "hostname": "<container hostname>"}` |
+| Endpoint        | Returns                                                                                                  |
+| --------------- | -------------------------------------------------------------------------------------------------------- |
+| `GET /`         | A simple HTML homepage                                                                                   |
+| `GET /health`   | `{"status": "ok"}`                                                                                       |
+| `GET /api/info` | `{"service": "docker-cicd-app", "version": "<APP_VERSION env var>", "hostname": "<container hostname>"}` |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Dev["Developer<br/>git push"] --> GH["GitHub repository"]
+    Dev["Developer git push"] --> GH["GitHub repository"]
     GH -- "triggers" --> CI
 
     subgraph CI["GitHub Actions: ci.yml"]
         direction TB
-        T["Job 1: ruff lint +<br/>pytest unit tests"] --> B["Job 2: docker build"]
-        B --> S["Smoke test:<br/>run container, curl /health"]
-        S --> P{"Push to main?"}
-        P -- "yes" --> PUSH["Push image to GHCR<br/>(tags: commit SHA + latest)"]
+        T["Job 1: ruff lint + pytest unit tests"] --> B["Job 2: build image once"]
+        B --> S["Smoke test: health, service, version, hostname"]
+        S --> V["Informational Trivy scan"]
+        V --> P{"Push to main?"}
+        P -- "yes" --> PUSH["Tag and push the tested image to GHCR"]
         P -- "no (pull request)" --> END["Stop: nothing published"]
     end
 
-    PUSH --> GHCR["ghcr.io<br/>GitHub Container Registry"]
-    GHCR -- "docker pull" --> Run["Anyone with access:<br/>docker run ..."]
+    PUSH --> GHCR["ghcr.io GitHub Container Registry"]
+    GHCR -- "docker pull" --> Run["Anyone with access: docker run ..."]
 ```
 
 ## Project structure
@@ -55,9 +56,15 @@ docker-cicd-app/
 │   └── main.py                 # The Flask app (3 endpoints)
 ├── tests/
 │   ├── __init__.py
-│   └── test_app.py             # pytest unit tests for every endpoint
+│   ├── test_app.py             # API behavior tests
+│   └── test_smoke_test.py      # Release-check success and failure cases
 ├── .github/workflows/
 │   └── ci.yml                  # The CI/CD pipeline
+├── .github/dependabot.yml       # Weekly dependency update proposals
+├── scripts/
+│   └── smoke_test.py            # Bounded HTTP release verification
+├── docs/screenshots/            # Portfolio evidence
+├── .gitattributes              # Consistent text line endings
 ├── Dockerfile                  # Multi-stage, non-root, healthcheck, gunicorn
 ├── docker-compose.yml          # One-command local run
 ├── .dockerignore               # Keeps junk and secrets out of the image
@@ -115,7 +122,7 @@ pip install -r requirements-dev.txt
 
 ruff check .                                # lint
 ruff format --check .                       # formatting check
-pytest -v                                   # unit tests
+pytest -v                                   # API and release-check tests
 ```
 
 ---
@@ -124,18 +131,25 @@ pytest -v                                   # unit tests
 
 The pipeline lives in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every push to `main` and every pull request into `main`.
 
-| Step | What happens | When |
-|---|---|---|
-| **1. Lint** | `ruff check` and `ruff format --check` catch style problems and likely bugs | always |
-| **2. Test** | `pytest` runs the unit tests | always |
-| **3. Build** | Docker builds the image (with layer caching) | always, only if steps 1–2 passed |
-| **4. Smoke test** | Starts the container and polls `/health` until it answers (fails after 30 seconds) | always |
-| **5. Log in** | Logs in to `ghcr.io` using the automatic `GITHUB_TOKEN` | push to `main` only |
-| **6. Publish** | Pushes the image tagged `sha-<full commit SHA>` and `latest` | push to `main` only |
+| Step              | What happens                                                                       | When                             |
+| ----------------- | ---------------------------------------------------------------------------------- | -------------------------------- |
+| **1. Lint**       | `ruff check` and `ruff format --check` catch style problems and likely bugs        | always                           |
+| **2. Test**       | `pytest` runs the unit tests                                                       | always                           |
+| **3. Build**      | Docker builds the image once (with layer caching)                                       | always, only if steps 1–2 passed |
+| **4. Smoke test** | Checks health and release metadata with a 30-second readiness budget | always                           |
+| **5. Scan** | Trivy reports high/critical vulnerabilities with available fixes; this scan is informational | always |
+| **6. Log in**     | Logs in to `ghcr.io` using the automatic `GITHUB_TOKEN`                            | push to `main` only              |
+| **7. Publish**    | Retags and pushes the exact tested image as `sha-<full commit SHA>` and `latest`                       | push to `main` only              |
 
-Pull requests run steps 1–4 only, so a broken change is caught **before** it can be merged, and nothing is published from an unreviewed branch.
+Pull requests run steps 1–5. On pushes to `main`, steps 6–7 authenticate to GHCR and publish the image that passed the smoke test. No second build occurs. A final cleanup step removes the test container, including after failures.
 
-An optional **Trivy** vulnerability scan is included as a commented-out step in `ci.yml`. Uncomment it to enable it (it's set to non-blocking).
+The **Trivy** scan is informational: vulnerability findings and scan-tool failures do not block publication. Check its logs to distinguish a completed scan from a tool error.
+
+### Dependency maintenance and reproducibility
+
+Dependabot proposes weekly updates for Python dependencies, GitHub Actions, and the Docker base image after its configuration is merged into the default branch. Review and test those proposals before merging.
+
+Direct Python dependencies are pinned. Their transitive dependencies and the mutable `python:3.13-slim` tag are not fully locked, so separate builds can differ. This workflow guarantees that it publishes the image it tested in the same run; a complete dependency lock and base-image digest are future improvements.
 
 ### One-time GitHub setup
 
@@ -151,7 +165,7 @@ git init
 git add .
 git commit -m "Dockerized Flask app with GitHub Actions CI/CD"
 git branch -M main
-git remote add origin https://github.com/[[YOUR-GITHUB-USERNAME]]/docker-cicd-app.git
+git remote add origin https://github.com/Bo-Giles-Projects/docker-cicd-app.git
 git push -u origin main
 ```
 
@@ -165,30 +179,35 @@ Run `git status` before committing and make sure no `.venv/`, `.env`, or key fil
 4. Pull and run your published image:
 
    ```bash
-   docker pull ghcr.io/[[your-github-username-in-lowercase]]/docker-cicd-app:latest
-   docker run --rm -p 8000:8000 ghcr.io/[[your-github-username-in-lowercase]]/docker-cicd-app:latest
+   docker pull ghcr.io/bo-giles-projects/docker-cicd-app:latest
+   docker run --rm -p 8000:8000 ghcr.io/bo-giles-projects/docker-cicd-app:latest
    ```
 
    If the package is **private**, run `docker login ghcr.io` first (username = your GitHub username, password = a personal access token with the `read:packages` scope). If you want anyone to pull it, open the package's **Package settings** and change the visibility to public. Check the current visibility there rather than assuming.
 
 ## Status badge
 
-The badge at the top of this README shows whether the latest run on `main` passed. Replace `[[YOUR-GITHUB-USERNAME]]` in the badge URL with your GitHub username. It starts working after your first workflow run.
+The badge at the top of this README shows whether the latest CI run on `main` passed.
 
 ---
 
 ## What I learned
 
-*Fill this in after you get the pipeline green. Interviewers love this section because it shows reflection, not just copying. Prompts to get you started:*
+- Docker: An image is the packaged app; a container is a running copy.
+- Git: You created a branch, committed changes, and pushed them.
+- Testing: You updated a test to check the new service field.
+- CI/CD: GitHub Actions checked the code, built the container, tested it, and published it after merging.
+- Verification: You downloaded the published image and matched its reported version to your Git commit.
+- Documentation: You added screenshots and instructions so someone else can understand your work.
 
-- What is the difference between a Docker **image** and a **container**, in my own words?
-- Why does the Dockerfile copy `requirements.txt` and install packages *before* copying the app code?
-- What did my first failed pipeline run look like, and how did I debug it from the logs?
-- Why do we use a **multi-stage** build and a **non-root** user?
-- Why is the smoke test needed if the unit tests already pass?
-- What would I add next? (Examples: deploy the image to a server or Kubernetes, add vulnerability scanning, add a staging environment.)
+Through this project, I practiced packaging and running a Flask application with Docker. I used a Git branch and pull request to add a service field to an API response and updated a test to verify it. I followed how GitHub Actions checks the code, builds and smoke-tests the container, and publishes the image after a merge into main. I also verified the published image by running it locally and matching its version to the merged commit. Documenting the process helped me connect the individual commands to the overall release workflow.
 
-`[[Write 3–5 sentences here about what surprised you or what you'd do differently.]]`
+## Project evidence
+
+- ![Successful CI/CD pipeline](docs/screenshots/pipeline-passed.png)
+- ![Successful pull request checks](docs/screenshots/pull-request-merged.png)
+- [Merged feature pull request #1](https://github.com/Bo-Giles-Projects/docker-cicd-app/pull/1)
+- ![Running published image](docs/screenshots/published-app-info.png)
 
 ## Next project
 

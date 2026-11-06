@@ -6,7 +6,7 @@ something real to test, containerize, and ship through a CI/CD pipeline.
 Endpoints:
     GET /            -> a simple HTML homepage
     GET /health      -> JSON status, used by Docker HEALTHCHECK and the CI smoke test
-    GET /api/info    -> JSON with the app version and the container's hostname
+    GET /api/info    -> JSON with the service name, app version, and container hostname
 """
 
 import os

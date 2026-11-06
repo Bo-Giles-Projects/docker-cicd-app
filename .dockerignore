@@ -10,10 +10,16 @@ __pycache__
 .pytest_cache
 .ruff_cache
 tests
+scripts
+docs
+.gitattributes
 requirements-dev.txt
 *.md
 Dockerfile
 docker-compose.yml
 .dockerignore
 .env
+.env.*
+*.pem
+*.key
 *.zip

@@ -58,6 +58,7 @@ The **health endpoint**. Docker's `HEALTHCHECK`, our CI smoke test, and (later) 
     @app.get("/api/info")
     def info():
         return jsonify(
+            service="docker-cicd-app",
             version=os.environ.get("APP_VERSION", "0.0.0-dev"),
             hostname=socket.gethostname(),
         )
@@ -78,15 +79,16 @@ Creates the app at import time. gunicorn is told `app.main:app`, meaning "file `
 - `@pytest.fixture()` defines reusable setup. Any test that lists `client` as a parameter automatically receives it.
 - `app.test_client()` is Flask's fake browser. It calls the app **in memory** with no server or network, so tests are fast.
 - `monkeypatch.setenv(...)` / `delenv(...)` change an environment variable for **one test only** and restore it afterward, so tests don't affect each other.
-- The tests cover: homepage HTML, `/health` JSON, `/api/info` with a set version, `/api/info` with the default version, and a 404 for an unknown route.
+- The API tests cover homepage HTML, `/health` JSON, `/api/info` identity and version, the default version, and unknown routes.
+- `tests/test_smoke_test.py` exercises the release checker against a local HTTP server, including wrong service/version, invalid health, startup failures, request timeouts, and a failing command-line exit status.
 
 ---
 
 ## `requirements.txt` and `requirements-dev.txt`
 
-- Versions are **pinned** with `==` so every build installs exactly the same packages (reproducible builds).
+- Direct dependency versions are **pinned** with `==`. This does not lock their transitive dependencies. The Docker base tag can also change. A full dependency lock and base-image digest would provide stronger repeatability.
 - `requirements.txt` holds what the app needs to **run**. `requirements-dev.txt` adds tools for **development/CI** (pytest, ruff) and starts with `-r requirements.txt` to include the runtime ones. The Docker image installs only the first file, so it's smaller and has fewer things to attack.
-- Pins don't update themselves. Updating them later (manually, or with a tool like Dependabot) is part of maintenance.
+- `.github/dependabot.yml` proposes weekly updates to Python packages, action versions, and the Docker base image after the configuration reaches the default branch. Updates still need review and CI checks.
 
 ## `pyproject.toml`
 
@@ -121,7 +123,8 @@ Creates a virtual environment and puts it first on `PATH`, so `pip` and `python`
 
 ```dockerfile
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+ && python -m pip uninstall --yes pip
 ```
 Copy **only** the requirements file, then install. Because Docker caches layers, this slow step is skipped whenever `requirements.txt` hasn't changed, even if your code did. This is the single most common Dockerfile optimization. `--no-cache-dir` stops pip from storing downloaded files.
 
@@ -174,6 +177,10 @@ CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--access-logfile",
 - `0.0.0.0` means listen on all network interfaces. If you used `127.0.0.1`, nothing outside the container could reach it.
 - `--workers 2` runs two worker processes. `--access-logfile -` sends request logs to stdout so `docker logs` shows them.
 - The **list ("exec") form** runs gunicorn directly as the main process, so it receives stop signals correctly.
+
+### Runtime packaging tools
+
+The builder removes pip from the finished virtual environment after installing the app dependencies. The runtime stage also removes the base image's pip and bundled ensurepip installer wheels. These are installation tools, not application dependencies. Install dependencies while building an image; rebuild and redeploy to change them. The container still includes Python, Flask, Gunicorn, and the libraries needed to run the app.
 
 ## `.dockerignore`
 
@@ -229,7 +236,7 @@ Run on a GitHub-hosted Linux virtual machine that is created fresh and thrown aw
 | `pip install -r requirements-dev.txt` | Installs the app dependencies plus pytest and ruff. |
 | `ruff check .` | Lints the code: unused imports, likely bugs, import order. A non-zero exit code fails the step. |
 | `ruff format --check .` | Verifies formatting, without changing files. |
-| `pytest -v` | Runs the unit tests. |
+| `pytest -v` | Runs the API tests and release-check success/failure tests. |
 
 **How failure works:** if any step's command exits with a non-zero code, the step fails, the job stops, and the run turns red. That's all "CI failing" means.
 
@@ -248,18 +255,19 @@ permissions:
 |---|---|
 | `docker/setup-buildx-action@v4` | Sets up **Buildx**, Docker's modern builder, which supports the layer cache used below. |
 | `docker/metadata-action@v6` | Computes image tags and labels. `type=sha,format=long` makes `sha-<full commit SHA>`; `type=raw,value=latest,enable={{is_default_branch}}` adds `latest` only on the default branch. It also lowercases the image name, since registries require lowercase. |
-| `docker/build-push-action@v7` (first use) | Builds the image. `load: true` puts it in the runner's local Docker so we can run it; `push: false` publishes nothing. `build-args` stamps the commit SHA in as `APP_VERSION`. `cache-from/cache-to: type=gha` stores layers in GitHub's Actions cache so later builds are faster. |
-| **Smoke test** | `docker run -d -p 8000:8000` starts the container in the background. A loop calls `curl --fail` on `/health` up to 30 times, 1 second apart, and exits `0` on the first success. If it never answers, it prints `docker logs` and exits `1`. (`--fail` makes curl return an error on HTTP 4xx/5xx.) |
-| *(optional, commented out)* Trivy | A scanner that checks the image's OS packages and libraries for known vulnerabilities. `exit-code: "0"` makes it informational; `"1"` would fail the build on findings. |
+| `docker/build-push-action@v7` | Builds the image once, applying its labels and commit version. `load: true` loads it into local Docker as `smoke-test:ci`; `push: false` keeps publication separate. GitHub Actions caching speeds up later runs. |
+| **Smoke test** | Starts the container on loopback port 8000 and runs `scripts/smoke_test.py`. It waits for readiness, then checks health JSON and service, expected commit version, and hostname. Startup retries share a 30-second budget; each request has at most a two-second socket timeout. CI also imposes a two-minute step limit. Failures return a nonzero exit status and container logs are shown. |
+| **Trivy scan** | Reports high/critical vulnerabilities with available fixes. `exit-code: "0"` makes findings informational, and `continue-on-error: true` also permits scanner errors. Inspect the step logs; a tool error is not a clean scan. |
 | `docker/login-action@v4` | Logs in to `ghcr.io` with `github.actor` (who triggered the run) and `secrets.GITHUB_TOKEN`. No password is stored anywhere: GitHub generates the token for each run and it expires when the job ends. |
-| `docker/build-push-action@v7` (second use) | Builds again (fast, from cache) and pushes with `push: true` and the tags/labels from the metadata step. |
+| **Push the tested image** | `docker tag` assigns the generated GHCR tags to the local tested image. The workflow checks that their image IDs match before `docker push`. There is no rebuild. |
+| **Cleanup** | `if: always()` removes the smoke-test container after success or failure. |
 
 ```yaml
 if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 ```
 On the login and push steps: run only when the event is a **push** (not a pull request) **and** the branch is `main`. This is how the same workflow tests PRs without publishing from them.
 
-**Why build twice?** The first build is for testing and stays local. The second does the publish. Because of the layer cache, the second is nearly instant. (A common alternative is to build once, push to a temporary tag, and test that.)
+**Why publish the same image?** A second independent build could resolve changed upstream inputs. Retagging and pushing the already-tested local image preserves the tested image content. This is a single-platform workflow; multi-platform releases need verification for each target platform.
 
 **Version numbers like `@v7`:** these are release tags of each action. Check each action's GitHub Releases page occasionally and bump the major version when new ones appear. Dependabot can open those update PRs automatically.
 
@@ -299,11 +307,11 @@ HEALTHCHECK lets Docker periodically test the running container and mark it heal
 GitHub creates a short-lived `GITHUB_TOKEN` for each workflow run. The `docker/login-action` step uses it as the password, and the `docker` job declares `packages: write` so the token is allowed to push packages. There's no long-lived secret to leak or rotate, and the token expires when the job ends.
 
 **7. Why does the push step only run on `main`, and not on pull requests?**
-Pull requests are unreviewed code, and often come from branches or forks. We test them (lint, tests, build, smoke test) but don't publish, so `latest` always points at code that was merged into `main`. This is enforced with `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`.
+Pull requests are unreviewed code, and often come from branches or forks. We test them (lint, tests, build, smoke test) but don't publish, so `latest` is published only from pushes to `main`, including direct pushes as well as merges. This is enforced with `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`.
 
 **8. How would you extend this pipeline into a full CD pipeline, or make it more secure?**
 - *Deploy:* add a job that runs after the push and deploys the new image to a server, ECS, or Kubernetes (the next project in this portfolio), ideally with an approval gate for production.
-- *Security:* enable the Trivy scan and make it blocking for critical issues, add Dependabot for the pinned dependencies and action versions, pin actions to commit SHAs, and consider signing images.
+- *Security:* consider making the informational Trivy scan blocking after deciding how to handle findings and tool errors, pin actions to commit SHAs, and consider signing images. Dependabot update configuration is already included.
 - *Quality:* add test coverage reporting and a required-status-check branch protection rule so nothing merges unless CI is green.
 - *Versioning:* add semantic version tags on releases.
 
@@ -315,4 +323,8 @@ Pull requests are unreviewed code, and often come from branches or forks. We tes
 2. Change the `HEALTHCHECK` port to `9999`, rebuild, and watch `docker ps` show `unhealthy`. Then revert.
 3. Run `docker history docker-cicd-app:local` to see the layers, and `docker images` to see the image size.
 4. Run `docker run --rm docker-cicd-app:local whoami` and confirm it prints `app`.
-5. Add a new `/version` endpoint **with a test**, push, and watch the pipeline publish a new `sha-` tag.
+5. Add a new `/version` endpoint **with a test**, open a pull request, then merge it after checks pass. The push to `main` publishes a new `sha-` tag.
+
+## Windows line endings
+
+`.gitattributes` keeps text files in LF format across Windows and Linux and treats screenshots as binary files. This avoids relying on each developer's Git line-ending settings.

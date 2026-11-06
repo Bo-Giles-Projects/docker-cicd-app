@@ -21,7 +21,8 @@ WORKDIR /build
 # long as requirements.txt doesn't change, this slow install step is reused
 # even when our source code changes.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+ && python -m pip uninstall --yes pip
 
 # ============================================================================
 # Stage 2: "runtime". The small image we actually ship.
@@ -48,6 +49,11 @@ WORKDIR /app
 # Bring in the installed packages from the builder stage, then our code.
 COPY --from=builder /opt/venv /opt/venv
 COPY --chown=app:app app/ ./app/
+
+# Package installers are build tools; the running app does not need them.
+# Remove the base image's pip and bundled installer wheels as well.
+RUN /usr/local/bin/python -m pip uninstall --yes pip \
+ && /usr/local/bin/python -c "import ensurepip, shutil; from pathlib import Path; shutil.rmtree(Path(ensurepip.__file__).parent)"
 
 # Switch to the unprivileged user for everything from here on.
 USER app

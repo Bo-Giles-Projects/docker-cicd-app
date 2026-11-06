@@ -310,7 +310,7 @@ GitHub creates a short-lived `GITHUB_TOKEN` for each workflow run. The `docker/l
 Pull requests are unreviewed code, and often come from branches or forks. We test them (lint, tests, build, smoke test) but don't publish, so `latest` is published only from pushes to `main`, including direct pushes as well as merges. This is enforced with `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`.
 
 **8. How would you extend this pipeline into a full CD pipeline, or make it more secure?**
-- *Deploy:* add a job that runs after the push and deploys the new image to a server, ECS, or Kubernetes (the next project in this portfolio), ideally with an approval gate for production.
+- *Deploy:* the app now runs on an Oracle Cloud VM through a manual deployment. A next step is to automate release deployment after image publication, including health verification and rollback.
 - *Security:* consider making the informational Trivy scan blocking after deciding how to handle findings and tool errors, pin actions to commit SHAs, and consider signing images. Dependabot update configuration is already included.
 - *Quality:* add test coverage reporting and a required-status-check branch protection rule so nothing merges unless CI is green.
 - *Versioning:* add semantic version tags on releases.
@@ -328,3 +328,17 @@ Pull requests are unreviewed code, and often come from branches or forks. We tes
 ## Windows line endings
 
 `.gitattributes` keeps text files in LF format across Windows and Linux and treats screenshots as binary files. This avoids relying on each developer's Git line-ending settings.
+
+## Oracle Cloud deployment milestone — November 6, 2026
+
+The published AMD64 image now runs on an Ubuntu 24.04 VM using the Always Free-eligible VM.Standard.E2.1.Micro shape.
+
+- **SSH:** a private key on the administrator's Windows computer authenticates to the Ubuntu account. The private key stays outside the repository.
+- **VCN and subnet:** the VM's virtual network adapter belongs to a public subnet. A public IP, internet-gateway route, and appropriate security rules provide public reachability.
+- **Public IPv4:** the instance-creation form disabled the public-IP switch despite selecting a new public subnet. Assigning an ephemeral public IP to the existing primary private IP after VM creation resolved the setup obstacle.
+- **Port mapping:** Docker maps host port 80 to Gunicorn's port 8000 inside the container. The subnet security list permits inbound TCP port 80.
+- **Release verification:** external requests returned the homepage, `{"status":"ok"}`, and service/version metadata matching deployed commit `b734d13caeda78f9a227f701ca92cc3cc60bcad5`.
+- **Operations:** `--restart unless-stopped` provides automatic container restart when Docker starts or the process exits, unless deliberately stopped. The Docker health check reports health; that status alone does not restart the container.
+- **Delivery versus deployment:** CI publishes a tested image to GHCR. The operator currently chooses and runs the VM release manually.
+
+See [ORACLE_DEPLOYMENT.md](docs/ORACLE_DEPLOYMENT.md) for the reproducible setup and operating commands.

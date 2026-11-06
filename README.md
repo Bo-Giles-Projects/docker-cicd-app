@@ -1,4 +1,4 @@
-# Dockerized Flask App with a GitHub Actions CI/CD Pipeline
+# Dockerized Flask App with GitHub Actions and Oracle Cloud
 
 A small Flask app packaged in a Docker image. GitHub Actions lints and tests changes, builds the image once, verifies its health and release metadata, and runs an informational vulnerability scan. On pushes to `main`, the workflow publishes that same tested image to **GitHub Container Registry (GHCR)**.
 
@@ -10,8 +10,25 @@ A small Flask app packaged in a Docker image. GitHub Actions lints and tests cha
 
 ---
 
+## Oracle Cloud deployment
+
+The app is running on an Ubuntu 24.04 VM using Oracle Cloud's Always Free-eligible AMD shape.
+
+| Endpoint | Live URL |
+|---|---|
+| Homepage | http://129.153.29.123/ |
+| Health | http://129.153.29.123/health |
+| Release information | http://129.153.29.123/api/info |
+
+The homepage, health JSON, and release metadata were checked externally on November 6, 2026. The running release reports commit `b734d13caeda78f9a227f701ca92cc3cc60bcad5`.
+
+[Oracle deployment and operations guide](docs/ORACLE_DEPLOYMENT.md) — server setup, networking, Docker startup, verification, logs, and update/rollback instructions.
+
+GitHub Actions automatically publishes images. Deploying a new image to the VM is currently manual. The demo uses HTTP and an ephemeral public IP; update these links if the address changes.
+
 ## What this project shows
 
+- **Cloud hosting:** an Ubuntu VM on Oracle Cloud, public subnet and IPv4 configuration, SSH administration, and a Docker container serving HTTP on port 80.
 - **Containerization:** a multi-stage `Dockerfile` with a slim base image, a non-root user, a `HEALTHCHECK`, and a production server (gunicorn).
 - **Continuous Integration (CI):** every push to `main` and pull request targeting `main` is automatically linted (ruff) and unit tested (pytest).
 - **Continuous Delivery (CD):** on a push to `main`, the image is published to GHCR, tagged with the commit SHA and `latest`.
@@ -44,7 +61,7 @@ flowchart LR
     end
 
     PUSH --> GHCR["ghcr.io GitHub Container Registry"]
-    GHCR -- "docker pull" --> Run["Anyone with access: docker run ..."]
+    GHCR -- "Manual deployment" --> Run["Oracle Ubuntu VM: Docker port 80"]
 ```
 
 ## Project structure
@@ -63,6 +80,7 @@ docker-cicd-app/
 ├── .github/dependabot.yml       # Weekly dependency update proposals
 ├── scripts/
 │   └── smoke_test.py            # Bounded HTTP release verification
+├── docs/ORACLE_DEPLOYMENT.md    # Cloud deployment and operations guide
 ├── docs/screenshots/            # Portfolio evidence
 ├── .gitattributes              # Consistent text line endings
 ├── Dockerfile                  # Multi-stage, non-root, healthcheck, gunicorn
@@ -194,11 +212,14 @@ The badge at the top of this README shows whether the latest CI run on `main` pa
 ## What I learned
 
 - Docker: An image is the packaged app; a container is a running copy.
-- Git: You created a branch, committed changes, and pushed them.
-- Testing: You updated a test to check the new service field.
+- Git: I created a branch, committed changes, and pushed them.
+- Testing: I updated a test to check the new service field.
 - CI/CD: GitHub Actions checked the code, built the container, tested it, and published it after merging.
-- Verification: You downloaded the published image and matched its reported version to your Git commit.
-- Documentation: You added screenshots and instructions so someone else can understand your work.
+- Verification: I downloaded the published image and matched its reported version to the Git commit.
+- Documentation: I added screenshots and instructions so someone else can understand the project.
+
+- Cloud deployment: I deployed the published image to an Oracle Cloud Ubuntu VM and verified it from my Windows browser.
+- Networking: I configured a public subnet, assigned a public IPv4 address, and added a TCP port 80 ingress rule.
 
 Through this project, I practiced packaging and running a Flask application with Docker. I used a Git branch and pull request to add a service field to an API response and updated a test to verify it. I followed how GitHub Actions checks the code, builds and smoke-tests the container, and publishes the image after a merge into main. I also verified the published image by running it locally and matching its version to the merged commit. Documenting the process helped me connect the individual commands to the overall release workflow.
 
@@ -209,6 +230,8 @@ Through this project, I practiced packaging and running a Flask application with
 - [Merged feature pull request #1](https://github.com/Bo-Giles-Projects/docker-cicd-app/pull/1)
 - ![Running published image](docs/screenshots/published-app-info.png)
 
-## Next project
+## Next improvements
 
-The image published here is the starting point for **Project 3**: running it on Kubernetes with monitoring.
+- Add HTTPS with a domain and reverse proxy.
+- Automate VM deployment after successful image publication, with health verification and rollback.
+- Extend the portfolio with Kubernetes and monitoring.

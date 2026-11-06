@@ -9,7 +9,10 @@ venv/
 
 # Secrets and local config: never commit these
 .env
+.env.*
+!.env.example
 *.pem
+*.key
 
 # Editors / OS
 .vscode/

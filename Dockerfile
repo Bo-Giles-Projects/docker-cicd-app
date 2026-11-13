@@ -4,7 +4,7 @@
 # Stage 1: "builder". Installs dependencies into a virtual environment.
 # Everything in this stage is thrown away except what we copy out of it.
 # ============================================================================
-FROM python:3.13-slim AS builder
+FROM python:3.15-slim AS builder
 
 # Don't write .pyc files, and don't buffer output (so logs appear immediately).
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # Stage 2: "runtime". The small image we actually ship.
 # It has no pip cache and no build leftovers, just Python + the venv + our code.
 # ============================================================================
-FROM python:3.13-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
